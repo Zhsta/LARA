@@ -1,19 +1,20 @@
-# -*- coding: utf-8 -*-
 import pandas as pd
 import tensorflow as tf
 import numpy as np
 from LARA import  data_loads
-
-'''Hyper parameters'''
+#正则化参数
 alpha = 0
+#movielens数据集中商品的属性
 attribute_num = 18  # the number of attribute
+#为属性学习新的向量表示的维度
 compress_attribute_num = 5  # the dimention of attribute present
 batch_size = 1024
+#隐藏层的大小
 hidden_layer_dim = 100  # G hidden layer dimention
+#用户向量的维度
 user_emd_dim = attribute_num
 
-'''D variables'''
-
+#判别器的参数
 discriminator_compress_attribute = tf.get_variable('discriminator_compress_attribute', [2 * attribute_num, compress_attribute_num],
                                  initializer=tf.contrib.layers.xavier_initializer())
 discriminator_W1 = tf.get_variable('discriminator_w1', [attribute_num * compress_attribute_num + user_emd_dim, hidden_layer_dim],
@@ -26,8 +27,7 @@ discriminator_b3 = tf.get_variable('discriminator_b3', [1, user_emd_dim], initia
 
 discriminator_params = [discriminator_compress_attribute, discriminator_W1, discriminator_b1, discriminator_W2, discriminator_b2, discriminator_W3, discriminator_b3]
 
-'''G variables'''
-
+#生成器的参数
 generator_compress_attribute = tf.get_variable('generator_compress_attribute', [2 * attribute_num, compress_attribute_num],
                                  initializer=tf.contrib.layers.xavier_initializer())
 generator_W1 = tf.get_variable('generator_w1', [attribute_num * compress_attribute_num, hidden_layer_dim],
@@ -40,15 +40,14 @@ generator_b3 = tf.get_variable('generator_b3', [1, user_emd_dim], initializer=tf
 
 generator_params = [generator_compress_attribute, generator_W1, generator_b1, generator_W2, generator_b2, generator_W3, generator_b3]
 
-'''placeholder'''
-
+#要传入的数据
 attribute_id = tf.placeholder(shape=[None, attribute_num], dtype=tf.int32)
 real_user_emb = tf.placeholder(shape=[None, user_emd_dim], dtype=tf.float32)
 
 neg_attribute_id = tf.placeholder(shape=[None, attribute_num], dtype=tf.int32)
 neg_user_emb = tf.placeholder(shape=[None, user_emd_dim], dtype=tf.float32)
 
-
+#生成器训练的流程
 def generator(attribute_index):
     compressed_attribue_vec = tf.nn.embedding_lookup(generator_compress_attribute, attribute_index)
     flat_compressed_attribute_vec = tf.reshape(compressed_attribue_vec,
@@ -58,7 +57,7 @@ def generator(attribute_index):
     layer3 = tf.nn.tanh(tf.matmul(layer2, generator_W3) + generator_b3)
     return layer3
 
-
+#判别器训练的流程
 def discriminator(attribute_index, user_emb):
     compressed_attribute_vec = tf.nn.embedding_lookup(discriminator_compress_attribute, attribute_index)
     flat_compressed_attribute_vec = tf.reshape(compressed_attribute_vec,
@@ -72,7 +71,7 @@ def discriminator(attribute_index, user_emb):
     )
     return layer3, result
 
-
+#矩阵相乘计算相似度，返回最相似的k个用户的index
 def get_k_similiar_user(generator_user, k):
     # print('gu')
     # print(generator_user)
@@ -82,7 +81,7 @@ def get_k_similiar_user(generator_user, k):
     #print(similarity_matrix)
     similarity_user_index = np.argsort(-similarity_matrix)
     return similarity_user_index[:, 0:k]
-
+#对当前生成的用户的向量，计算评价指标
 def evaluate(test_data_item, generator_user):
     user_item_interaction = np.array(pd.read_csv('ui_matrix.csv',header=None))
     k = 20
@@ -123,7 +122,7 @@ def evaluate(test_data_item, generator_user):
 
     return p_at_10,p_at_20,m_at_10,m_at_20,g_at_10,g_at_20
 
-
+#进行训练
 def train():
     fake_user_emb = generator(attribute_id)
     discriminator_real, discriminator_logit_real = discriminator(attribute_id, real_user_emb)
@@ -145,7 +144,7 @@ def train():
     generator_regular = alpha * (tf.nn.l2_loss(generator_compress_attribute) + tf.nn.l2_loss(generator_W1) +
                          tf.nn.l2_loss(generator_b1) + tf.nn.l2_loss(generator_W2) + tf.nn.l2_loss(generator_b2) + tf.nn.l2_loss(
                 generator_W2) + tf.nn.l2_loss(generator_b2) + tf.nn.l2_loss(generator_W3) + tf.nn.l2_loss(generator_b3))
-
+    #gan在编码时的损失函数
     discriminator_loss = (1 - alpha) * (discriminator_loss_real + discriminator_loss_fake + discriminator_loss_counter) + discriminator_regular
     generator_loss = (1 - alpha) * (tf.reduce_mean(
         tf.nn.sigmoid_cross_entropy_with_logits(logits=discriminator_logit_fake, labels=tf.ones_like(discriminator_logit_fake)))) + generator_regular
@@ -158,29 +157,13 @@ def train():
     sess = tf.Session(config=config)
     sess.run(tf.global_variables_initializer())
 
-    test_item_batch, test_attribute_vec = data_loads.get_test_data()
-
-    test_generator_user = sess.run(fake_user_emb, feed_dict={attribute_id: test_attribute_vec})
-
-    p_at_10, p_at_20, M_at_10, M_at_20, generator_at_10, generator_at_20 = evaluate(test_item_batch, test_generator_user)
-    print('at start p_at_10 is', p_at_10, 'p_at_20', p_at_20, 'M_at_10', M_at_10, 'M_at_20', M_at_20, 'generator_at_10',
-          generator_at_10, 'generator_at_20', generator_at_20)
-
-
-    train_data = np.array(pd.read_csv('train_data.csv'))
-
-    np.random.shuffle(train_data)
-    # user_emb.csv 每一个genre出现的次数除以该用户的所有genre数
-    user_emb_matrix = np.array(pd.read_csv('user_emb.csv', header=None))
-
     for it in range(800):
+      #设定生成器和判别器训练的次数
         discriminator_range = 1
         generator_range = 1
-        # data_loads.shuffle()
-        # data_loads.shuffle2()
         for discriminator_it in range(discriminator_range):
             index = 0
-
+            #防止访问negdata越界
             while index < 253236:
                 if index + batch_size <= 253236:
                     train_user_batch, train_item_batch, train_attr_batch, train_user_emb_batch = data_loads.get_train_data(
@@ -207,6 +190,7 @@ def train():
 
                 _, generator_loss_now = sess.run([generator_solver, generator_loss], feed_dict={attribute_id: train_attr_batch})
             print(generator_loss_now)
+        #每训练一轮输出评价
         if it % 1 == 0:
             print('迭代次数'+str(it+1))
             test_item_batch, test_attribute_vec = data_loads.get_test_data()
