@@ -47,7 +47,7 @@ real_user_emb = tf.placeholder(shape=[None, user_emd_dim], dtype=tf.float32)
 neg_attribute_id = tf.placeholder(shape=[None, attribute_num], dtype=tf.int32)
 neg_user_emb = tf.placeholder(shape=[None, user_emd_dim], dtype=tf.float32)
 
-#生成器训练的流程
+#生成器的流程
 def generator(attribute_index):
     compressed_attribue_vec = tf.nn.embedding_lookup(generator_compress_attribute, attribute_index)
     flat_compressed_attribute_vec = tf.reshape(compressed_attribue_vec,
@@ -57,7 +57,7 @@ def generator(attribute_index):
     layer3 = tf.nn.tanh(tf.matmul(layer2, generator_W3) + generator_b3)
     return layer3
 
-#判别器训练的流程
+#判别器的流程
 def discriminator(attribute_index, user_emb):
     compressed_attribute_vec = tf.nn.embedding_lookup(discriminator_compress_attribute, attribute_index)
     flat_compressed_attribute_vec = tf.reshape(compressed_attribute_vec,
